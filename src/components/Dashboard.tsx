@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import { useDashboardStore } from "@/stores/dashboardStore";
+import { useDashboardStore, type ChatSource } from "@/stores/dashboardStore";
 import VideoCard from "@/components/VideoCard";
 
 const statusLabels = {
@@ -95,6 +95,9 @@ export default function Dashboard() {
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [expandedCitations, setExpandedCitations] = useState<
+    Record<string, boolean>
+  >({});
 
   const progressFromStep =
     analysisStep >= 0
@@ -302,7 +305,7 @@ export default function Dashboard() {
               token?: string;
               content?: string;
               text?: string;
-              sources?: { label: string; url?: string }[];
+              sources?: ChatSource[];
             };
             if (payload.token || payload.content || payload.text) {
               appendToMessage(
@@ -336,6 +339,60 @@ export default function Dashboard() {
   const handleSuggestionClick = (prompt: string) => {
     setInput(prompt);
     chatInputRef.current?.focus();
+  };
+
+  const toggleCitation = (key: string) => {
+    setExpandedCitations((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const getCitationTitle = (source: ChatSource) => {
+    const videoLabel = source.videoLabel ?? source.label ?? "Video";
+    const chunkLabel =
+      typeof source.chunkIndex === "number"
+        ? `Chunk ${source.chunkIndex}`
+        : "Chunk";
+    const timestamp = source.timestamp ? ` - ${source.timestamp}` : "";
+    return `${videoLabel} - ${chunkLabel}${timestamp}`;
+  };
+
+  const renderSnippet = (source: ChatSource) => {
+    const snippet = source.snippet ?? source.label ?? "";
+    if (!snippet) return null;
+
+    const highlight = source.highlight?.trim();
+    if (!highlight) {
+      return (
+        <span className="rounded-lg bg-[rgba(34,211,238,0.16)] px-1">
+          {snippet}
+        </span>
+      );
+    }
+
+    const lowerSnippet = snippet.toLowerCase();
+    const lowerHighlight = highlight.toLowerCase();
+    const matchIndex = lowerSnippet.indexOf(lowerHighlight);
+
+    if (matchIndex < 0) {
+      return (
+        <span className="rounded-lg bg-[rgba(34,211,238,0.16)] px-1">
+          {snippet}
+        </span>
+      );
+    }
+
+    const before = snippet.slice(0, matchIndex);
+    const match = snippet.slice(matchIndex, matchIndex + highlight.length);
+    const after = snippet.slice(matchIndex + highlight.length);
+
+    return (
+      <>
+        {before}
+        <span className="rounded-lg bg-[rgba(34,211,238,0.26)] px-1 text-[rgb(var(--text-primary))]">
+          {match}
+        </span>
+        {after}
+      </>
+    );
   };
 
   return (
@@ -528,7 +585,9 @@ export default function Dashboard() {
                     <div
                       key={message.id}
                       className={`flex ${
-                        message.role === "user" ? "justify-end" : "justify-start"
+                        message.role === "user"
+                          ? "justify-end"
+                          : "justify-start"
                       }`}
                     >
                       <div
@@ -548,33 +607,57 @@ export default function Dashboard() {
                         >
                           {message.content || " "}
                         </ReactMarkdown>
-                        {message.sources && message.sources.length > 0 ? (
-                          <div className="mt-3">
+                        {message.role === "assistant" ? (
+                          <div className="mt-3 space-y-2">
                             <p className="text-[11px] text-[rgb(var(--text-secondary))]">
-                              Sources
+                              Citations
                             </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {message.sources.map((source) =>
-                                source.url ? (
-                                  <a
-                                    key={source.url}
-                                    href={source.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-2xl border border-[rgba(255,255,255,0.12)] px-2 py-1 text-[11px] text-[rgb(var(--accent-cyan))]"
-                                  >
-                                    {source.label}
-                                  </a>
-                                ) : (
-                                  <span
-                                    key={source.label}
-                                    className="rounded-2xl border border-[rgba(255,255,255,0.12)] px-2 py-1 text-[11px] text-[rgb(var(--text-secondary))]"
-                                  >
-                                    {source.label}
-                                  </span>
-                                ),
-                              )}
-                            </div>
+                            {message.sources && message.sources.length > 0 ? (
+                              message.sources.map((source, indexValue) => {
+                                const citationKey = `${message.id}-${indexValue}`;
+                                const isExpanded =
+                                  !!expandedCitations[citationKey];
+                                const snippetPreview =
+                                  source.snippet ?? source.label ?? "";
+
+                                return (
+                                  <div key={citationKey}>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleCitation(citationKey)
+                                      }
+                                      aria-expanded={isExpanded}
+                                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(11,15,25,0.55)] px-3 py-2 text-left text-xs text-[rgb(var(--text-secondary))] transition hover:border-[rgba(34,211,238,0.4)]"
+                                    >
+                                      <span className="text-[rgb(var(--text-primary))]">
+                                        {getCitationTitle(source)}
+                                      </span>
+                                      <span className="text-[rgb(var(--accent-cyan))]">
+                                        {isExpanded ? "Hide" : "View"}
+                                      </span>
+                                    </button>
+                                    {snippetPreview ? (
+                                      <p className="mt-2 text-xs text-[rgb(var(--text-secondary))]">
+                                        "{snippetPreview}"
+                                      </p>
+                                    ) : null}
+                                    {isExpanded ? (
+                                      <div className="mt-2 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(11,15,25,0.6)] p-3 text-xs text-[rgb(var(--text-primary))]">
+                                        <p className="leading-relaxed">
+                                          {renderSnippet(source) ??
+                                            "Transcript snippet unavailable."}
+                                        </p>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="rounded-2xl border border-dashed border-[rgba(255,255,255,0.12)] bg-[rgba(11,15,25,0.45)] px-3 py-2 text-xs text-[rgb(var(--text-secondary))]">
+                                Citations pending.
+                              </div>
+                            )}
                           </div>
                         ) : null}
                       </div>
@@ -585,8 +668,14 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 text-xs text-[rgb(var(--text-secondary))]">
                     <div className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" />
-                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" style={{ animationDelay: "0.1s" }} />
-                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" style={{ animationDelay: "0.2s" }} />
+                      <span
+                        className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce"
+                        style={{ animationDelay: "0.1s" }}
+                      />
+                      <span
+                        className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce"
+                        style={{ animationDelay: "0.2s" }}
+                      />
                     </div>
                     <span>Assistant is typing...</span>
                   </div>

@@ -34,7 +34,14 @@ export type ChatMessage = {
 };
 
 export type ChatSource = {
-  label: string;
+  id?: string;
+  videoId?: string;
+  videoLabel?: string;
+  chunkIndex?: number;
+  timestamp?: string;
+  snippet?: string;
+  highlight?: string;
+  label?: string;
   url?: string;
 };
 
@@ -73,7 +80,8 @@ const initialVideos: VideoCard[] = [
     title: "Retention hooks: first 9 seconds",
     url: "https://youtube.com/watch?v=example",
     notes: "Primary comparison target.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=80",
     embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
     creatorName: "Nova Ellis",
     followerCount: 1240000,
@@ -95,7 +103,8 @@ const initialVideos: VideoCard[] = [
     title: "Hook breakdown: 7 seconds to watch time",
     url: "https://instagram.com/reel/example",
     notes: "Secondary comparison target.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=900&q=80",
     embedUrl: "https://www.youtube.com/embed/ysz5S6PUM-U",
     creatorName: "Jules Carter",
     followerCount: 860000,

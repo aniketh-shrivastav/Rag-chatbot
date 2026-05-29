@@ -21,7 +21,11 @@ type VideoCardProps = {
   index?: number;
 };
 
-const PlatformIcon = ({ platform }: { platform: VideoCardData["platform"] }) => {
+const PlatformIcon = ({
+  platform,
+}: {
+  platform: VideoCardData["platform"];
+}) => {
   if (platform === "YouTube") {
     return (
       <svg
@@ -63,7 +67,7 @@ function VideoCard({ video, index = 0 }: VideoCardProps) {
       { label: "Comments", value: formatCount(video.comments) },
       { label: "Engagement", value: formatRate(video.engagementRate) },
       { label: "Duration", value: video.duration },
-      { label: "Upload", value: video.uploadDate }
+      { label: "Upload", value: video.uploadDate },
     ],
     [
       video.comments,
@@ -72,8 +76,8 @@ function VideoCard({ video, index = 0 }: VideoCardProps) {
       video.followerCount,
       video.likes,
       video.uploadDate,
-      video.views
-    ]
+      video.views,
+    ],
   );
 
   const handleCopyTranscript = async () => {
