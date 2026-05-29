@@ -1,0 +1,26 @@
+import type { Metadata } from "next";
+import { Sora } from "next/font/google";
+import "./globals.css";
+
+const sora = Sora({
+  subsets: ["latin"],
+  variable: "--font-sora",
+  display: "swap"
+});
+
+export const metadata: Metadata = {
+  title: "Creator Comparison Dashboard",
+  description: "RAG chatbot dashboard for comparing creator videos."
+};
+
+export default function RootLayout({
+  children
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={sora.variable}>
+      <body className="min-h-screen antialiased">{children}</body>
+    </html>
+  );
+}
