@@ -46,9 +46,16 @@ export default function SignupPage() {
                 required
                 minLength={2}
                 autoComplete="name"
+                aria-describedby="name-error"
                 placeholder="Nova Ellis"
-                className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
+                className="peer mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] focus:invalid:border-rose-400 focus:invalid:ring-rose-400/30"
               />
+              <p
+                id="name-error"
+                className="mt-2 text-xs text-rose-400 opacity-0 transition peer-invalid:opacity-100 peer-placeholder-shown:opacity-0"
+              >
+                Name must be at least 2 characters.
+              </p>
             </div>
             <div>
               <label
@@ -62,11 +69,21 @@ export default function SignupPage() {
                 name="email"
                 type="email"
                 required
+                pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}$"
+                title="Use a valid email like name@domain.com"
                 autoComplete="email"
                 inputMode="email"
+                aria-describedby="email-error"
                 placeholder="you@studio.com"
-                className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
+                className="peer mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] focus:invalid:border-rose-400 focus:invalid:ring-rose-400/30"
               />
+              <p
+                id="email-error"
+                className="mt-2 text-xs text-rose-400 opacity-0 transition peer-invalid:opacity-100 peer-placeholder-shown:opacity-0"
+              >
+                Enter a valid email with a domain suffix (example:
+                name@domain.com).
+              </p>
             </div>
             <div>
               <label
@@ -82,9 +99,16 @@ export default function SignupPage() {
                 required
                 minLength={8}
                 autoComplete="new-password"
+                aria-describedby="password-error"
                 placeholder="Create a password"
-                className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
+                className="peer mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] focus:invalid:border-rose-400 focus:invalid:ring-rose-400/30"
               />
+              <p
+                id="password-error"
+                className="mt-2 text-xs text-rose-400 opacity-0 transition peer-invalid:opacity-100 peer-placeholder-shown:opacity-0"
+              >
+                Password must be at least 8 characters.
+              </p>
             </div>
             <button
               type="submit"

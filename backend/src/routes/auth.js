@@ -6,6 +6,7 @@ const requireAuth = require("../middleware/auth");
 const { jwtSecret, jwtExpiresIn } = require("../config");
 
 const router = express.Router();
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}$/;
 
 const signToken = (user) =>
   jwt.sign({ sub: user._id.toString(), email: user.email }, jwtSecret, {
@@ -27,6 +28,12 @@ router.post("/signup", async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        error:
+          "Email must include a valid domain suffix, for example name@domain.com",
+      });
+    }
     const existing = await User.findOne({ email: normalizedEmail });
 
     if (existing) {
@@ -60,6 +67,12 @@ router.post("/login", async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        error:
+          "Email must include a valid domain suffix, for example name@domain.com",
+      });
+    }
     const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
