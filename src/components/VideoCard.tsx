@@ -212,9 +212,16 @@ function VideoCard({ video, index = 0 }: VideoCardProps) {
           </div>
         ) : (
           <div className="mt-3 max-h-28 overflow-y-auto text-sm text-[rgb(var(--text-primary))]">
-            <p className="whitespace-pre-line leading-relaxed">
-              {video.transcript}
-            </p>
+            {video.transcript ? (
+              <p className="whitespace-pre-line leading-relaxed">
+                {video.transcript}
+              </p>
+            ) : (
+              <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+                Transcript unavailable for this source. Retry analysis after the
+                video finishes processing.
+              </p>
+            )}
           </div>
         )}
       </div>

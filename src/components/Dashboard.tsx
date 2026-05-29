@@ -29,6 +29,67 @@ const promptSuggestions = [
   "Compare engagement rates.",
 ];
 
+type ToastTone = "info" | "success" | "warning" | "error";
+
+type ToastItem = {
+  id: string;
+  tone: ToastTone;
+  title: string;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+};
+
+const isLikelyYouTubeUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    return (
+      host === "youtu.be" ||
+      host === "youtube.com" ||
+      host.endsWith(".youtube.com")
+    );
+  } catch {
+    return false;
+  }
+};
+
+const isLikelyInstagramUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    return host === "instagram.com" || host.endsWith(".instagram.com");
+  } catch {
+    return false;
+  }
+};
+
+const normalizeServerError = (message: string) => {
+  const lower = message.toLowerCase();
+
+  if (lower.includes("timeout")) {
+    return "The request timed out. Try again or shorten the input.";
+  }
+
+  if (lower.includes("transcript")) {
+    return "Transcript unavailable for one of the videos.";
+  }
+
+  if (lower.includes("empty embeddings") || lower.includes("no embeddings")) {
+    return "No embeddings were returned. Retry analysis after the source is processed.";
+  }
+
+  if (lower.includes("instagram")) {
+    return "Instagram scraping failed. Check the Reel URL and try again.";
+  }
+
+  if (lower.includes("llm") || lower.includes("model")) {
+    return "The model failed to generate a response. Retry generation.";
+  }
+
+  return message;
+};
+
 const markdownComponents: Components = {
   code({
     inline,
@@ -100,9 +161,26 @@ export default function Dashboard() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
+  const lastAnalyzeRequestRef = useRef<{
+    youtubeUrl: string;
+    instagramUrl: string;
+  } | null>(null);
+  const lastChatPromptRef = useRef<string>("");
+  const chatTimeoutRef = useRef<number | null>(null);
+  const analyzeTimeoutRef = useRef<number | null>(null);
+  const toastTimersRef = useRef<Record<string, number>>({});
+  const retryContextRef = useRef<{
+    assistantId?: string;
+    prompt?: string;
+  } | null>(null);
   const [expandedCitations, setExpandedCitations] = useState<
     Record<string, boolean>
   >({});
+  const [analysisInlineError, setAnalysisInlineError] = useState<string | null>(
+    null,
+  );
+  const [chatInlineError, setChatInlineError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const progressFromStep =
     analysisStep >= 0
@@ -119,8 +197,36 @@ export default function Dashboard() {
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close();
+      if (chatTimeoutRef.current) window.clearTimeout(chatTimeoutRef.current);
+      if (analyzeTimeoutRef.current)
+        window.clearTimeout(analyzeTimeoutRef.current);
+      Object.values(toastTimersRef.current).forEach((timerId) =>
+        window.clearTimeout(timerId),
+      );
     };
   }, []);
+
+  const dismissToast = (id: string) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+    const timerId = toastTimersRef.current[id];
+    if (timerId) {
+      window.clearTimeout(timerId);
+      delete toastTimersRef.current[id];
+    }
+  };
+
+  const pushToast = (toast: Omit<ToastItem, "id">) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((current) => [...current, { ...toast, id }]);
+    toastTimersRef.current[id] = window.setTimeout(() => {
+      dismissToast(id);
+    }, 5500);
+    return id;
+  };
+
+  const makeRequestTimeout = (onTimeout: () => void, timeoutMs = 20000) => {
+    return window.setTimeout(onTimeout, timeoutMs);
+  };
 
   const applyProgressUpdate = (payload: {
     step?: string;
@@ -160,14 +266,89 @@ export default function Dashboard() {
     }
   };
 
-  const handleAnalyze = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (isAnalyzeDisabled) return;
+  const clearChatTimeout = () => {
+    if (chatTimeoutRef.current) {
+      window.clearTimeout(chatTimeoutRef.current);
+      chatTimeoutRef.current = null;
+    }
+  };
 
+  const clearAnalyzeTimeout = () => {
+    if (analyzeTimeoutRef.current) {
+      window.clearTimeout(analyzeTimeoutRef.current);
+      analyzeTimeoutRef.current = null;
+    }
+  };
+
+  const finalizeAnalysisFailure = (error: unknown) => {
+    const message =
+      error instanceof Error ? error.message : "Analysis failed. Try again.";
+    const normalized = normalizeServerError(message);
+    setAnalysisStep(analysisSteps.length - 1);
+    setAnalysisProgress(100);
+    setAnalysisStatus("Analysis failed");
+    setAnalysisInlineError(normalized);
+    pushToast({
+      tone: "error",
+      title: "Analysis failed",
+      message: normalized,
+      actionLabel: "Retry analysis",
+      onAction: () => {
+        const lastRequest = lastAnalyzeRequestRef.current;
+        if (!lastRequest) return;
+        setYoutubeUrl(lastRequest.youtubeUrl);
+        setInstagramUrl(lastRequest.instagramUrl);
+        void runAnalyze(lastRequest.youtubeUrl, lastRequest.instagramUrl);
+      },
+    });
+  };
+
+  const finalizeChatFailure = (
+    assistantId: string,
+    message: string,
+    tone: ToastTone = "error",
+  ) => {
+    updateMessage(assistantId, { isStreaming: false });
+    appendToMessage(
+      assistantId,
+      `\n\n${normalizeServerError(message)}${
+        message.toLowerCase().includes("retry")
+          ? ""
+          : "\nRetry the prompt to continue."
+      }`,
+    );
+    clearChatTimeout();
+    setStreaming(false);
+    setStatus("idle");
+    setChatInlineError(normalizeServerError(message));
+    eventSourceRef.current = null;
+    activeStreamIdRef.current = null;
+    activeAssistantIdRef.current = null;
+    pushToast({
+      tone,
+      title: "Chat interrupted",
+      message: normalizeServerError(message),
+      actionLabel: "Retry prompt",
+      onAction: () => {
+        const prompt = lastChatPromptRef.current;
+        if (!prompt) return;
+        void runChatStream(prompt, { addUserMessage: false });
+      },
+    });
+  };
+
+  const runAnalyze = async (youtube: string, instagram: string) => {
+    setAnalysisInlineError(null);
     setIsAnalyzing(true);
     setAnalysisStep(0);
     setAnalysisProgress(8);
     setAnalysisStatus(analysisSteps[0].label);
+
+    const controller = new AbortController();
+    clearAnalyzeTimeout();
+    analyzeTimeoutRef.current = makeRequestTimeout(() => {
+      controller.abort();
+    }, 25000);
 
     try {
       const response = await fetch("/api/analyze", {
@@ -176,13 +357,22 @@ export default function Dashboard() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          youtubeUrl,
-          instagramUrl,
+          youtubeUrl: youtube,
+          instagramUrl: instagram,
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
-        throw new Error("Analyze request failed");
+        let details = "";
+        try {
+          details = (await response.text()).trim();
+        } catch {
+          details = "";
+        }
+        throw new Error(
+          details || `Analyze request failed (${response.status})`,
+        );
       }
 
       if (!response.body) {
@@ -215,9 +405,37 @@ export default function Dashboard() {
                 status?: string;
                 progress?: number;
                 message?: string;
+                error?: string;
+                code?: string;
               };
+
+              if (payload.error) {
+                throw new Error(payload.error);
+              }
+
+              if (payload.code === "missing_transcript") {
+                throw new Error(
+                  "Transcript unavailable for one of the videos.",
+                );
+              }
+
+              if (payload.code === "instagram_scrape_failed") {
+                throw new Error(
+                  "Instagram scraping failed. Check the Reel URL and try again.",
+                );
+              }
+
+              if (payload.code === "empty_embeddings") {
+                throw new Error(
+                  "No embeddings were returned. Retry analysis after the source is processed.",
+                );
+              }
+
               applyProgressUpdate(payload);
-            } catch {
+            } catch (parseError) {
+              if (parseError instanceof Error && parseError.message) {
+                throw parseError;
+              }
               applyProgressUpdate({ message: payloadText });
             }
           }
@@ -227,16 +445,53 @@ export default function Dashboard() {
       setAnalysisStep(analysisSteps.length - 1);
       setAnalysisProgress(100);
       setAnalysisStatus(analysisSteps[analysisSteps.length - 1].label);
-    } catch {
-      setAnalysisStatus("Analysis failed. Try again.");
+    } catch (error) {
+      finalizeAnalysisFailure(error);
     } finally {
+      clearAnalyzeTimeout();
       setIsAnalyzing(false);
     }
+  };
+
+  const handleAnalyze = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isAnalyzeDisabled) return;
+
+    const nextYoutube = youtubeUrl.trim();
+    const nextInstagram = instagramUrl.trim();
+
+    if (
+      !isLikelyYouTubeUrl(nextYoutube) ||
+      !isLikelyInstagramUrl(nextInstagram)
+    ) {
+      const invalidMessage =
+        !isLikelyYouTubeUrl(nextYoutube) && !isLikelyInstagramUrl(nextInstagram)
+          ? "Please enter a valid YouTube URL and Instagram Reel URL."
+          : !isLikelyYouTubeUrl(nextYoutube)
+            ? "Please enter a valid YouTube URL."
+            : "Please enter a valid Instagram Reel URL.";
+      setAnalysisInlineError(invalidMessage);
+      setAnalysisStatus("Fix the video URLs and try again.");
+      pushToast({
+        tone: "warning",
+        title: "Invalid video URL",
+        message: invalidMessage,
+      });
+      return;
+    }
+
+    lastAnalyzeRequestRef.current = {
+      youtubeUrl: nextYoutube,
+      instagramUrl: nextInstagram,
+    };
+
+    void runAnalyze(nextYoutube, nextInstagram);
   };
 
   const handleAbortGeneration = async () => {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
+    clearChatTimeout();
 
     const assistantId = activeAssistantIdRef.current;
     if (assistantId) {
@@ -261,15 +516,22 @@ export default function Dashboard() {
     activeAssistantIdRef.current = null;
   };
 
-  const handleChatSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = input.trim();
+  const runChatStream = async (
+    prompt: string,
+    options: { addUserMessage?: boolean } = {},
+  ) => {
+    const trimmed = prompt.trim();
     if (!trimmed || isStreaming) return;
+
+    setChatInlineError(null);
+    lastChatPromptRef.current = trimmed;
 
     const timestamp = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
+    const addUserMessage = options.addUserMessage ?? true;
+    const previousAssistantId = retryContextRef.current?.assistantId;
     const userMessage = {
       id: `msg-${Date.now()}`,
       role: "user" as const,
@@ -278,7 +540,9 @@ export default function Dashboard() {
     };
     const assistantId = `msg-${Date.now()}-assistant`;
 
-    addMessage(userMessage);
+    if (addUserMessage) {
+      addMessage(userMessage);
+    }
     addMessage({
       id: assistantId,
       role: "assistant",
@@ -286,22 +550,34 @@ export default function Dashboard() {
       timestamp,
       isStreaming: true,
     });
+
+    retryContextRef.current = {
+      assistantId,
+      prompt: trimmed,
+    };
+
     activeAssistantIdRef.current = assistantId;
     setInput("");
     setStreaming(true);
     setStatus("connected");
 
     eventSourceRef.current?.close();
+    clearChatTimeout();
+
     const apiBase =
       process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
     const streamId = `stream-${Date.now()}`;
     activeStreamIdRef.current = streamId;
 
+    const conversationMessages = (
+      addUserMessage ? [...messages, userMessage] : messages
+    ).filter((message) => message.id !== previousAssistantId);
+
     const params = new URLSearchParams({
       prompt: trimmed,
       streamId,
       messages: JSON.stringify(
-        [...messages, userMessage].map((message) => ({
+        conversationMessages.map((message) => ({
           role: message.role,
           content: message.content,
         })),
@@ -312,15 +588,28 @@ export default function Dashboard() {
     const es = new EventSource(`${apiBase}/chat/stream?${params.toString()}`);
     eventSourceRef.current = es;
 
+    const armChatTimeout = () => {
+      clearChatTimeout();
+      chatTimeoutRef.current = makeRequestTimeout(() => {
+        finalizeChatFailure(
+          assistantId,
+          "The model timed out before finishing the response.",
+        );
+        es.close();
+      }, 18000);
+    };
+
     let reconnectNoted = false;
 
     es.addEventListener("start", () => {
       reconnectNoted = false;
       setStatus("connected");
+      armChatTimeout();
     });
 
     es.onopen = () => {
       setStatus("connected");
+      armChatTimeout();
       if (reconnectNoted && activeAssistantIdRef.current) {
         appendToMessage(activeAssistantIdRef.current, "\nConnection restored.");
         reconnectNoted = false;
@@ -333,6 +622,7 @@ export default function Dashboard() {
       };
       if (payload.token) {
         appendToMessage(assistantId, payload.token);
+        armChatTimeout();
       }
     });
 
@@ -347,6 +637,7 @@ export default function Dashboard() {
 
     es.addEventListener("done", () => {
       updateMessage(assistantId, { isStreaming: false });
+      clearChatTimeout();
       setStreaming(false);
       setStatus("idle");
       es.close();
@@ -359,6 +650,7 @@ export default function Dashboard() {
       updateMessage(assistantId, {
         isStreaming: false,
       });
+      clearChatTimeout();
       setStreaming(false);
       setStatus("idle");
       es.close();
@@ -367,36 +659,71 @@ export default function Dashboard() {
       activeAssistantIdRef.current = null;
     });
 
-    es.onerror = () => {
+    es.addEventListener("error", (event) => {
+      const payload = JSON.parse(
+        (event as MessageEvent<string>).data || "{}",
+      ) as {
+        message?: string;
+        error?: string;
+        code?: string;
+      };
+      if (payload.error || payload.message || payload.code) {
+        const codeMessage =
+          payload.code === "llm_failure"
+            ? "The model failed to generate a response. Retry generation."
+            : payload.code === "missing_transcript"
+              ? "Transcript unavailable for one of the videos."
+              : payload.code === "empty_embeddings"
+                ? "No embeddings were returned. Retry analysis after the source is processed."
+                : payload.code === "instagram_scrape_failed"
+                  ? "Instagram scraping failed. Check the Reel URL and try again."
+                  : payload.error ||
+                    payload.message ||
+                    "The chat stream failed.";
+        finalizeChatFailure(assistantId, codeMessage);
+        es.close();
+        return;
+      }
+
       setStatus("reconnecting");
       if (!reconnectNoted) {
         reconnectNoted = true;
         appendToMessage(assistantId, "\n\nReconnecting stream...");
+        pushToast({
+          tone: "warning",
+          title: "Connection interrupted",
+          message: "The chat stream is reconnecting in the background.",
+        });
       }
 
       if (es.readyState === EventSource.CLOSED) {
-        appendToMessage(
+        finalizeChatFailure(
           assistantId,
-          "\n\nUnable to continue stream. Please retry your prompt.",
+          "Unable to continue stream. Please retry your prompt.",
         );
-        updateMessage(assistantId, { isStreaming: false });
-        setStreaming(false);
-        setStatus("idle");
-        eventSourceRef.current = null;
-        activeStreamIdRef.current = null;
-        activeAssistantIdRef.current = null;
+        es.close();
       }
-    };
+    });
+  };
+
+  const handleChatSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed || isStreaming) return;
+
+    void runChatStream(trimmed);
   };
 
   const handleSuggestionClick = (prompt: string) => {
     setInput(prompt);
+    setChatInlineError(null);
     chatInputRef.current?.focus();
   };
 
   const handleNewChat = () => {
     resetChat();
     setExpandedCitations({});
+    setChatInlineError(null);
     chatInputRef.current?.focus();
   };
 
@@ -506,6 +833,12 @@ export default function Dashboard() {
                 </button>
               </div>
 
+              {analysisInlineError ? (
+                <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
+                  {analysisInlineError}
+                </div>
+              ) : null}
+
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div>
                   <label
@@ -517,10 +850,14 @@ export default function Dashboard() {
                   <input
                     id="youtube-url"
                     value={youtubeUrl}
-                    onChange={(event) => setYoutubeUrl(event.target.value)}
+                    onChange={(event) => {
+                      setYoutubeUrl(event.target.value);
+                      setAnalysisInlineError(null);
+                    }}
                     placeholder="https://youtube.com/watch?v=..."
                     disabled={isAnalyzing}
-                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60"
+                    aria-invalid={Boolean(analysisInlineError)}
+                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60 aria-[invalid=true]:border-rose-400/60"
                   />
                 </div>
                 <div>
@@ -533,10 +870,14 @@ export default function Dashboard() {
                   <input
                     id="instagram-url"
                     value={instagramUrl}
-                    onChange={(event) => setInstagramUrl(event.target.value)}
+                    onChange={(event) => {
+                      setInstagramUrl(event.target.value);
+                      setAnalysisInlineError(null);
+                    }}
                     placeholder="https://instagram.com/reel/..."
                     disabled={isAnalyzing}
-                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60"
+                    aria-invalid={Boolean(analysisInlineError)}
+                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60 aria-[invalid=true]:border-rose-400/60"
                   />
                 </div>
               </div>
@@ -756,6 +1097,11 @@ export default function Dashboard() {
                 onSubmit={handleChatSubmit}
                 className="border-t border-[rgba(255,255,255,0.06)] px-6 py-4"
               >
+                {chatInlineError ? (
+                  <div className="mb-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-xs text-rose-200">
+                    {chatInlineError}
+                  </div>
+                ) : null}
                 <label
                   htmlFor="chat-input"
                   className="text-xs font-medium text-[rgb(var(--text-secondary))]"
@@ -766,10 +1112,14 @@ export default function Dashboard() {
                   id="chat-input"
                   rows={3}
                   value={input}
-                  onChange={(event) => setInput(event.target.value)}
+                  onChange={(event) => {
+                    setInput(event.target.value);
+                    setChatInlineError(null);
+                  }}
                   placeholder="Ask for a hook-by-hook comparison..."
                   ref={chatInputRef}
-                  className="mt-2 w-full resize-none rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
+                  aria-invalid={Boolean(chatInlineError)}
+                  className="mt-2 w-full resize-none rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] aria-[invalid=true]:border-rose-400/60"
                 />
                 <div className="mt-4 flex items-center justify-between text-xs text-[rgb(var(--text-secondary))]">
                   <span>Shift + Enter for a new line</span>
@@ -804,6 +1154,54 @@ export default function Dashboard() {
             <span>Status: {statusLabels[status]}</span>
           </div>
         </footer>
+      </div>
+
+      <div className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3">
+        {toasts.map((toast) => {
+          const toneStyles =
+            toast.tone === "success"
+              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+              : toast.tone === "warning"
+                ? "border-amber-400/30 bg-amber-400/10 text-amber-100"
+                : toast.tone === "info"
+                  ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+                  : "border-rose-400/30 bg-rose-400/10 text-rose-100";
+
+          return (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto rounded-2xl border p-4 shadow-[0_20px_40px_rgba(5,8,16,0.6)] backdrop-blur-md ${toneStyles}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">{toast.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed opacity-90">
+                    {toast.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismissToast(toast.id)}
+                  className="text-xs opacity-70 transition hover:opacity-100"
+                >
+                  Dismiss
+                </button>
+              </div>
+              {toast.actionLabel && toast.onAction ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.onAction?.();
+                    dismissToast(toast.id);
+                  }}
+                  className="mt-3 rounded-2xl border border-current/20 px-3 py-1.5 text-xs font-semibold transition hover:bg-[rgba(255,255,255,0.08)]"
+                >
+                  {toast.actionLabel}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
