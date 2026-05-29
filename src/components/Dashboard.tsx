@@ -91,11 +91,15 @@ export default function Dashboard() {
     updateMessage,
     appendToMessage,
     setStreaming,
+    setStatus,
     resetChat,
   } = useDashboardStore();
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const activeStreamIdRef = useRef<string | null>(null);
+  const activeAssistantIdRef = useRef<string | null>(null);
   const [expandedCitations, setExpandedCitations] = useState<
     Record<string, boolean>
   >({});
@@ -111,6 +115,12 @@ export default function Dashboard() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close();
+    };
+  }, []);
 
   const applyProgressUpdate = (payload: {
     step?: string;
@@ -224,6 +234,33 @@ export default function Dashboard() {
     }
   };
 
+  const handleAbortGeneration = async () => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+
+    const assistantId = activeAssistantIdRef.current;
+    if (assistantId) {
+      appendToMessage(assistantId, "\n\nGeneration aborted by user.");
+      updateMessage(assistantId, { isStreaming: false });
+    }
+
+    const streamId = activeStreamIdRef.current;
+    if (streamId) {
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+      await fetch(`${apiBase}/chat/abort/${streamId}`, {
+        method: "POST",
+      }).catch(() => {
+        // Ignore abort request failures.
+      });
+      activeStreamIdRef.current = null;
+    }
+
+    setStreaming(false);
+    setStatus("idle");
+    activeAssistantIdRef.current = null;
+  };
+
   const handleChatSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = input.trim();
@@ -249,92 +286,107 @@ export default function Dashboard() {
       timestamp,
       isStreaming: true,
     });
+    activeAssistantIdRef.current = assistantId;
     setInput("");
     setStreaming(true);
+    setStatus("connected");
 
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: trimmed,
-          messages: [...messages, userMessage].map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-          videos,
-        }),
-      });
+    eventSourceRef.current?.close();
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+    const streamId = `stream-${Date.now()}`;
+    activeStreamIdRef.current = streamId;
 
-      if (!response.ok) {
-        throw new Error("Chat request failed");
+    const params = new URLSearchParams({
+      prompt: trimmed,
+      streamId,
+      messages: JSON.stringify(
+        [...messages, userMessage].map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      ),
+      videos: JSON.stringify(videos),
+    });
+
+    const es = new EventSource(`${apiBase}/chat/stream?${params.toString()}`);
+    eventSourceRef.current = es;
+
+    let reconnectNoted = false;
+
+    es.addEventListener("start", () => {
+      reconnectNoted = false;
+      setStatus("connected");
+    });
+
+    es.onopen = () => {
+      setStatus("connected");
+      if (reconnectNoted && activeAssistantIdRef.current) {
+        appendToMessage(activeAssistantIdRef.current, "\nConnection restored.");
+        reconnectNoted = false;
       }
+    };
 
-      if (!response.body) {
-        updateMessage(assistantId, {
-          content: "Response received.",
-          isStreaming: false,
-        });
-        return;
+    es.addEventListener("token", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as {
+        token?: string;
+      };
+      if (payload.token) {
+        appendToMessage(assistantId, payload.token);
       }
+    });
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine || trimmedLine.startsWith("event:")) continue;
-          const payloadText = trimmedLine.startsWith("data:")
-            ? trimmedLine.slice(5).trim()
-            : trimmedLine;
-
-          if (!payloadText) continue;
-
-          try {
-            const payload = JSON.parse(payloadText) as {
-              token?: string;
-              content?: string;
-              text?: string;
-              sources?: ChatSource[];
-            };
-            if (payload.token || payload.content || payload.text) {
-              appendToMessage(
-                assistantId,
-                payload.token ?? payload.content ?? payload.text ?? "",
-              );
-            }
-            if (payload.sources) {
-              updateMessage(assistantId, { sources: payload.sources });
-            }
-          } catch {
-            appendToMessage(assistantId, payloadText);
-          }
-        }
+    es.addEventListener("sources", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as {
+        sources?: ChatSource[];
+      };
+      if (payload.sources) {
+        updateMessage(assistantId, { sources: payload.sources });
       }
+    });
 
-      if (buffer.trim()) {
-        appendToMessage(assistantId, buffer.trim());
-      }
-    } catch {
-      updateMessage(assistantId, {
-        content: "Unable to reach the AI service. Try again.",
-        isStreaming: false,
-      });
-    } finally {
+    es.addEventListener("done", () => {
       updateMessage(assistantId, { isStreaming: false });
       setStreaming(false);
-    }
+      setStatus("idle");
+      es.close();
+      eventSourceRef.current = null;
+      activeStreamIdRef.current = null;
+      activeAssistantIdRef.current = null;
+    });
+
+    es.addEventListener("aborted", () => {
+      updateMessage(assistantId, {
+        isStreaming: false,
+      });
+      setStreaming(false);
+      setStatus("idle");
+      es.close();
+      eventSourceRef.current = null;
+      activeStreamIdRef.current = null;
+      activeAssistantIdRef.current = null;
+    });
+
+    es.onerror = () => {
+      setStatus("reconnecting");
+      if (!reconnectNoted) {
+        reconnectNoted = true;
+        appendToMessage(assistantId, "\n\nReconnecting stream...");
+      }
+
+      if (es.readyState === EventSource.CLOSED) {
+        appendToMessage(
+          assistantId,
+          "\n\nUnable to continue stream. Please retry your prompt.",
+        );
+        updateMessage(assistantId, { isStreaming: false });
+        setStreaming(false);
+        setStatus("idle");
+        eventSourceRef.current = null;
+        activeStreamIdRef.current = null;
+        activeAssistantIdRef.current = null;
+      }
+    };
   };
 
   const handleSuggestionClick = (prompt: string) => {
@@ -721,13 +773,25 @@ export default function Dashboard() {
                 />
                 <div className="mt-4 flex items-center justify-between text-xs text-[rgb(var(--text-secondary))]">
                   <span>Shift + Enter for a new line</span>
-                  <button
-                    type="submit"
-                    className="group relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.9)] px-4 py-2 text-xs font-semibold text-[rgb(var(--text-primary))] shadow-[0_14px_28px_rgba(5,8,16,0.5)] transition"
-                  >
-                    <span className="relative z-10">Send</span>
-                    <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-[linear-gradient(120deg,rgba(34,211,238,0.9),rgba(139,92,246,0.9))]" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isStreaming ? (
+                      <button
+                        type="button"
+                        onClick={handleAbortGeneration}
+                        className="rounded-2xl border border-rose-400/60 bg-rose-400/10 px-4 py-2 text-xs font-semibold text-rose-300"
+                      >
+                        Abort
+                      </button>
+                    ) : null}
+                    <button
+                      type="submit"
+                      disabled={isStreaming}
+                      className="group relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.9)] px-4 py-2 text-xs font-semibold text-[rgb(var(--text-primary))] shadow-[0_14px_28px_rgba(5,8,16,0.5)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <span className="relative z-10">Send</span>
+                      <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-[linear-gradient(120deg,rgba(34,211,238,0.9),rgba(139,92,246,0.9))]" />
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>

@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const helmet = require("helmet");
 const authRoutes = require("./routes/auth");
+const chatRoutes = require("./routes/chat");
 const { port, mongoUri, corsOrigin } = require("./config");
 
 const app = express();
@@ -21,6 +22,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/auth", authRoutes);
+app.use("/chat", chatRoutes);
 
 app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Unexpected server error" });

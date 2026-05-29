@@ -19,4 +19,6 @@ Node.js + Express + MongoDB JWT auth service.
 - POST /auth/signup
 - POST /auth/login
 - GET /auth/me (requires Bearer token)
+- GET /chat/stream (SSE)
+- POST /chat/abort/:streamId
 - GET /health
