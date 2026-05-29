@@ -3,14 +3,16 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
-  --surface: #f6f4ef;
-  --panel: #ffffff;
-  --ink: #0f172a;
-  --muted: #64748b;
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --ring: rgba(14, 116, 144, 0.25);
+  color-scheme: dark;
+  --bg: 11 15 25;
+  --panel: 17 24 39;
+  --panel-elevated: 22 31 46;
+  --accent-cyan: 34 211 238;
+  --accent-purple: 139 92 246;
+  --text-primary: 248 250 252;
+  --text-secondary: 148 163 184;
+  --border: 255 255 255;
+  --ring: 34 211 238;
 }
 
 * {
@@ -23,21 +25,22 @@ body {
 }
 
 body {
-  color: var(--ink);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  color: rgb(var(--text-primary));
   background:
     radial-gradient(
-      900px 700px at 90% -200px,
-      rgba(14, 116, 144, 0.12),
+      900px 600px at 15% -120px,
+      rgba(34, 211, 238, 0.12),
       transparent 60%
     ),
     radial-gradient(
-      800px 500px at -150px 10%,
-      rgba(125, 211, 252, 0.18),
-      transparent 55%
+      800px 520px at 115% -80px,
+      rgba(139, 92, 246, 0.12),
+      transparent 58%
     ),
-    var(--surface);
+    rgb(var(--bg));
 }
 
 ::selection {
-  background: rgba(14, 116, 144, 0.2);
+  background: rgba(34, 211, 238, 0.25);
 }
