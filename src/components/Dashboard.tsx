@@ -91,6 +91,7 @@ export default function Dashboard() {
     updateMessage,
     appendToMessage,
     setStreaming,
+    resetChat,
   } = useDashboardStore();
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -341,6 +342,12 @@ export default function Dashboard() {
     chatInputRef.current?.focus();
   };
 
+  const handleNewChat = () => {
+    resetChat();
+    setExpandedCitations({});
+    chatInputRef.current?.focus();
+  };
+
   const toggleCitation = (key: string) => {
     setExpandedCitations((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -551,15 +558,25 @@ export default function Dashboard() {
                     Streaming Insights
                   </h3>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-[rgb(var(--text-secondary))]">
-                  <span
-                    className={`h-2 w-2 rounded-2xl ${
-                      isStreaming
-                        ? "bg-[rgb(var(--accent-cyan))]"
-                        : "bg-[rgba(248,250,252,0.2)]"
-                    }`}
-                  />
-                  <span>{isStreaming ? "Streaming" : "Idle"}</span>
+                <div className="flex items-center gap-3 text-xs text-[rgb(var(--text-secondary))]">
+                  <button
+                    type="button"
+                    onClick={handleNewChat}
+                    disabled={isStreaming || messages.length === 0}
+                    className="rounded-2xl border border-[rgba(255,255,255,0.08)] px-3 py-1 text-[11px] text-[rgb(var(--text-primary))] transition hover:border-[rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    New Chat
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-2 w-2 rounded-2xl ${
+                        isStreaming
+                          ? "bg-[rgb(var(--accent-cyan))]"
+                          : "bg-[rgba(248,250,252,0.2)]"
+                      }`}
+                    />
+                    <span>{isStreaming ? "Streaming" : "Idle"}</span>
+                  </div>
                 </div>
               </div>
 
