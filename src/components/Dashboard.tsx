@@ -2,9 +2,8 @@
 
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
-import { useDashboardStore, type VideoPlatform } from "@/stores/dashboardStore";
-
-const platformOptions: VideoPlatform[] = ["YouTube", "Instagram"];
+import { useDashboardStore } from "@/stores/dashboardStore";
+import VideoCard from "@/components/VideoCard";
 
 const statusLabels = {
   idle: "Idle",
@@ -40,7 +39,6 @@ export default function Dashboard() {
     setAnalysisProgress,
     setAnalysisStatus,
     setInput,
-    updateVideo,
     addMessage,
   } = useDashboardStore();
 
@@ -321,108 +319,7 @@ export default function Dashboard() {
 
             <div className="grid gap-4 md:grid-cols-2">
               {videos.map((video, index) => (
-                <motion.div
-                  key={video.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: index * 0.08 }}
-                  className="group relative rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel-elevated)/0.7)] p-6 shadow-[0_18px_40px_rgba(5,8,16,0.5)] backdrop-blur-md transition-shadow hover:shadow-[0_28px_60px_rgba(5,10,18,0.6)]"
-                >
-                  <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,rgba(34,211,238,0),rgba(34,211,238,0.8),rgba(139,92,246,0.8),rgba(34,211,238,0))] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold tracking-tight text-[rgb(var(--text-primary))]">
-                      {video.label}
-                    </h3>
-                    <span className="rounded-2xl border border-[rgba(34,211,238,0.35)] bg-[rgba(34,211,238,0.12)] px-3 py-1 text-xs font-semibold text-[rgb(var(--accent-cyan))]">
-                      {video.platform}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <label
-                        htmlFor={`${video.id}-title`}
-                        className="text-xs font-medium text-[rgb(var(--text-secondary))]"
-                      >
-                        Title
-                      </label>
-                      <input
-                        id={`${video.id}-title`}
-                        value={video.title}
-                        onChange={(event) =>
-                          updateVideo(video.id, {
-                            title: event.target.value,
-                          })
-                        }
-                        className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor={`${video.id}-platform`}
-                        className="text-xs font-medium text-[rgb(var(--text-secondary))]"
-                      >
-                        Platform
-                      </label>
-                      <select
-                        id={`${video.id}-platform`}
-                        value={video.platform}
-                        onChange={(event) =>
-                          updateVideo(video.id, {
-                            platform: event.target.value as VideoPlatform,
-                          })
-                        }
-                        className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
-                      >
-                        {platformOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor={`${video.id}-url`}
-                        className="text-xs font-medium text-[rgb(var(--text-secondary))]"
-                      >
-                        Video URL
-                      </label>
-                      <input
-                        id={`${video.id}-url`}
-                        value={video.url}
-                        onChange={(event) =>
-                          updateVideo(video.id, {
-                            url: event.target.value,
-                          })
-                        }
-                        className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor={`${video.id}-notes`}
-                        className="text-xs font-medium text-[rgb(var(--text-secondary))]"
-                      >
-                        Notes
-                      </label>
-                      <textarea
-                        id={`${video.id}-notes`}
-                        value={video.notes}
-                        onChange={(event) =>
-                          updateVideo(video.id, {
-                            notes: event.target.value,
-                          })
-                        }
-                        rows={3}
-                        className="mt-2 w-full resize-none rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
-                      />
-                    </div>
-                  </div>
-                </motion.div>
+                <VideoCard key={video.id} video={video} index={index} />
               ))}
             </div>
           </section>
