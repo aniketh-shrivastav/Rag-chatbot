@@ -5,16 +5,16 @@ import "./globals.css";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
-  display: "swap"
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Creator Comparison Dashboard",
-  description: "RAG chatbot dashboard for comparing creator videos."
+  description: "RAG chatbot dashboard for comparing creator videos.",
 };
 
 export default function RootLayout({
-  children
+  children,
 }: {
   children: React.ReactNode;
 }) {
