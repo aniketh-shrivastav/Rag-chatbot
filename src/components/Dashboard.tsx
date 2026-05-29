@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import { useDashboardStore } from "@/stores/dashboardStore";
 import VideoCard from "@/components/VideoCard";
 
@@ -18,6 +21,51 @@ const analysisSteps = [
   { key: "vector", label: "Storing in vector DB..." },
   { key: "ready", label: "Ready for chat" },
 ];
+
+const promptSuggestions = [
+  "Why did Video A outperform Video B?",
+  "Compare hooks.",
+  "Suggest improvements.",
+  "Compare engagement rates.",
+];
+
+const markdownComponents: Components = {
+  code({
+    inline,
+    className,
+    children,
+  }: {
+    inline?: boolean;
+    className?: string;
+    children?: ReactNode;
+  }) {
+    if (inline) {
+      return (
+        <code className="rounded-2xl bg-[rgba(255,255,255,0.08)] px-2 py-1 text-[0.85em] text-[rgb(var(--text-primary))]">
+          {children ?? ""}
+        </code>
+      );
+    }
+
+    return (
+      <pre className="mt-3 overflow-x-auto rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(11,15,25,0.65)] p-3 text-xs text-[rgb(var(--text-primary))]">
+        <code className={className}>{children ?? ""}</code>
+      </pre>
+    );
+  },
+  a({ href, children }: { href?: string; children?: ReactNode }) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[rgb(var(--accent-cyan))] underline decoration-transparent transition hover:decoration-[rgb(var(--accent-cyan))]"
+      >
+        {children ?? href}
+      </a>
+    );
+  },
+};
 
 export default function Dashboard() {
   const {
@@ -40,7 +88,13 @@ export default function Dashboard() {
     setAnalysisStatus,
     setInput,
     addMessage,
+    updateMessage,
+    appendToMessage,
+    setStreaming,
   } = useDashboardStore();
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const progressFromStep =
     analysisStep >= 0
@@ -49,6 +103,10 @@ export default function Dashboard() {
   const progressValue = Math.max(analysisProgress, progressFromStep);
   const isAnalyzeDisabled =
     isAnalyzing || !youtubeUrl.trim() || !instagramUrl.trim();
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isStreaming]);
 
   const applyProgressUpdate = (payload: {
     step?: string;
@@ -162,21 +220,122 @@ export default function Dashboard() {
     }
   };
 
-  const handleChatSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleChatSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!trimmed || isStreaming) return;
 
-    addMessage({
+    const timestamp = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const userMessage = {
       id: `msg-${Date.now()}`,
-      role: "user",
+      role: "user" as const,
       content: trimmed,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      timestamp,
+    };
+    const assistantId = `msg-${Date.now()}-assistant`;
+
+    addMessage(userMessage);
+    addMessage({
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      timestamp,
+      isStreaming: true,
     });
     setInput("");
+    setStreaming(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: trimmed,
+          messages: [...messages, userMessage].map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          videos,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Chat request failed");
+      }
+
+      if (!response.body) {
+        updateMessage(assistantId, {
+          content: "Response received.",
+          isStreaming: false,
+        });
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine || trimmedLine.startsWith("event:")) continue;
+          const payloadText = trimmedLine.startsWith("data:")
+            ? trimmedLine.slice(5).trim()
+            : trimmedLine;
+
+          if (!payloadText) continue;
+
+          try {
+            const payload = JSON.parse(payloadText) as {
+              token?: string;
+              content?: string;
+              text?: string;
+              sources?: { label: string; url?: string }[];
+            };
+            if (payload.token || payload.content || payload.text) {
+              appendToMessage(
+                assistantId,
+                payload.token ?? payload.content ?? payload.text ?? "",
+              );
+            }
+            if (payload.sources) {
+              updateMessage(assistantId, { sources: payload.sources });
+            }
+          } catch {
+            appendToMessage(assistantId, payloadText);
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        appendToMessage(assistantId, buffer.trim());
+      }
+    } catch {
+      updateMessage(assistantId, {
+        content: "Unable to reach the AI service. Try again.",
+        isStreaming: false,
+      });
+    } finally {
+      updateMessage(assistantId, { isStreaming: false });
+      setStreaming(false);
+    }
+  };
+
+  const handleSuggestionClick = (prompt: string) => {
+    setInput(prompt);
+    chatInputRef.current?.focus();
   };
 
   return (
@@ -348,6 +507,18 @@ export default function Dashboard() {
               </div>
 
               <div className="flex-1 space-y-4 overflow-auto px-6 py-4">
+                <div className="flex flex-wrap gap-2">
+                  {promptSuggestions.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => handleSuggestionClick(prompt)}
+                      className="rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 py-1 text-xs text-[rgb(var(--text-secondary))] transition hover:border-[rgba(34,211,238,0.4)] hover:text-[rgb(var(--text-primary))]"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
                 {messages.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.4)] p-4 text-sm text-[rgb(var(--text-secondary))]">
                     Start a comparison to stream insights here.
@@ -356,22 +527,71 @@ export default function Dashboard() {
                   messages.map((message) => (
                     <div
                       key={message.id}
-                      className={`rounded-2xl border px-4 py-3 text-sm shadow-[0_14px_28px_rgba(5,8,16,0.45)] ${
-                        message.role === "assistant"
-                          ? "border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel-elevated)/0.6)] text-[rgb(var(--text-primary))]"
-                          : "border-[rgba(34,211,238,0.4)] bg-[rgba(34,211,238,0.14)] text-[rgb(var(--text-primary))]"
+                      className={`flex ${
+                        message.role === "user" ? "justify-end" : "justify-start"
                       }`}
                     >
-                      <div className="mb-2 flex items-center justify-between text-[11px] text-[rgb(var(--text-secondary))] opacity-80">
-                        <span>{message.role}</span>
-                        <span>{message.timestamp}</span>
+                      <div
+                        className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm shadow-[0_14px_28px_rgba(5,8,16,0.45)] ${
+                          message.role === "assistant"
+                            ? "border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel-elevated)/0.6)] text-[rgb(var(--text-primary))]"
+                            : "border-[rgba(34,211,238,0.4)] bg-[rgba(34,211,238,0.14)] text-[rgb(var(--text-primary))]"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between text-[11px] text-[rgb(var(--text-secondary))] opacity-80">
+                          <span>{message.role}</span>
+                          <span>{message.timestamp}</span>
+                        </div>
+                        <ReactMarkdown
+                          className="text-sm leading-relaxed"
+                          components={markdownComponents}
+                        >
+                          {message.content || " "}
+                        </ReactMarkdown>
+                        {message.sources && message.sources.length > 0 ? (
+                          <div className="mt-3">
+                            <p className="text-[11px] text-[rgb(var(--text-secondary))]">
+                              Sources
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {message.sources.map((source) =>
+                                source.url ? (
+                                  <a
+                                    key={source.url}
+                                    href={source.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-2xl border border-[rgba(255,255,255,0.12)] px-2 py-1 text-[11px] text-[rgb(var(--accent-cyan))]"
+                                  >
+                                    {source.label}
+                                  </a>
+                                ) : (
+                                  <span
+                                    key={source.label}
+                                    className="rounded-2xl border border-[rgba(255,255,255,0.12)] px-2 py-1 text-[11px] text-[rgb(var(--text-secondary))]"
+                                  >
+                                    {source.label}
+                                  </span>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                      <ReactMarkdown className="text-sm leading-relaxed">
-                        {message.content}
-                      </ReactMarkdown>
                     </div>
                   ))
                 )}
+                {isStreaming ? (
+                  <div className="flex items-center gap-2 text-xs text-[rgb(var(--text-secondary))]">
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" />
+                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" style={{ animationDelay: "0.1s" }} />
+                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" style={{ animationDelay: "0.2s" }} />
+                    </div>
+                    <span>Assistant is typing...</span>
+                  </div>
+                ) : null}
+                <div ref={chatEndRef} />
               </div>
 
               <form
@@ -390,6 +610,7 @@ export default function Dashboard() {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   placeholder="Ask for a hook-by-hook comparison..."
+                  ref={chatInputRef}
                   className="mt-2 w-full resize-none rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)]"
                 />
                 <div className="mt-4 flex items-center justify-between text-xs text-[rgb(var(--text-secondary))]">

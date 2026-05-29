@@ -29,6 +29,13 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  sources?: ChatSource[];
+  isStreaming?: boolean;
+};
+
+export type ChatSource = {
+  label: string;
+  url?: string;
 };
 
 type DashboardState = {
@@ -52,6 +59,8 @@ type DashboardState = {
   setInput: (value: string) => void;
   updateVideo: (id: string, patch: Partial<VideoCard>) => void;
   addMessage: (message: ChatMessage) => void;
+  updateMessage: (id: string, patch: Partial<ChatMessage>) => void;
+  appendToMessage: (id: string, chunk: string) => void;
   setStreaming: (value: boolean) => void;
   setStatus: (value: DashboardState["status"]) => void;
 };
@@ -130,6 +139,20 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     })),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
+  updateMessage: (id, patch) =>
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === id ? { ...message, ...patch } : message,
+      ),
+    })),
+  appendToMessage: (id, chunk) =>
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === id
+          ? { ...message, content: `${message.content}${chunk}` }
+          : message,
+      ),
+    })),
   setStreaming: (isStreaming) => set({ isStreaming }),
   setStatus: (status) => set({ status }),
 }));
