@@ -29,11 +29,19 @@ function TranscriptVirtualizer({
     if (!element) return;
 
     const updateWindow = () => {
-      const visibleLines = Math.max(1, Math.ceil(element.clientHeight / lineHeight));
-      const start = Math.max(0, Math.floor(element.scrollTop / lineHeight) - overscan);
+      const visibleLines = Math.max(
+        1,
+        Math.ceil(element.clientHeight / lineHeight),
+      );
+      const start = Math.max(
+        0,
+        Math.floor(element.scrollTop / lineHeight) - overscan,
+      );
       const end = Math.min(lines.length, start + visibleLines + overscan * 2);
       setViewport((current) =>
-        current.start === start && current.end === end ? current : { start, end },
+        current.start === start && current.end === end
+          ? current
+          : { start, end },
       );
     };
 
@@ -60,7 +68,10 @@ function TranscriptVirtualizer({
   const visibleLines = lines.slice(start, end);
 
   return (
-    <div ref={containerRef} className={`max-h-36 overflow-y-auto ${className ?? ""}`}>
+    <div
+      ref={containerRef}
+      className={`max-h-36 overflow-y-auto ${className ?? ""}`}
+    >
       <div style={{ paddingTop: topPadding, paddingBottom: bottomPadding }}>
         {visibleLines.map((line, index) => (
           <p

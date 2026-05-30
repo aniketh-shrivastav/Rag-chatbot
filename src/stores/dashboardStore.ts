@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import {
+  createJSONStorage,
+  persist,
+  type StateStorage,
+} from "zustand/middleware";
 
 export type VideoPlatform = "YouTube" | "Instagram";
 
@@ -123,6 +127,12 @@ const initialVideos: VideoCard[] = [
   },
 ];
 
+const noopStorage: StateStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
+
 export const useDashboardStore = create<DashboardState>()(
   persist(
     (set) => ({
@@ -173,7 +183,7 @@ export const useDashboardStore = create<DashboardState>()(
     {
       name: "rag-chatbot-chat",
       storage: createJSONStorage(() =>
-        typeof window !== "undefined" ? localStorage : undefined,
+        typeof window !== "undefined" ? localStorage : noopStorage,
       ),
       partialize: (state) => ({ messages: state.messages }),
     },

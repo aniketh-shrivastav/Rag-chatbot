@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -50,6 +44,8 @@ type ToastItem = {
   actionLabel?: string;
   onAction?: () => void;
 };
+
+type MobileTab = "videos" | "chat";
 
 const isLikelyYouTubeUrl = (value: string) => {
   try {
@@ -102,7 +98,15 @@ const normalizeServerError = (message: string) => {
 };
 
 const markdownComponents: Components = {
-  code({ inline, className, children }: { inline?: boolean; className?: string; children?: ReactNode }) {
+  code({
+    inline,
+    className,
+    children,
+  }: {
+    inline?: boolean;
+    className?: string;
+    children?: ReactNode;
+  }) {
     if (inline) {
       return (
         <code className="rounded-2xl bg-[rgba(255,255,255,0.08)] px-2 py-1 text-[0.85em] text-[rgb(var(--text-primary))]">
@@ -191,7 +195,9 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   onToggleCitation: (key: string) => void;
 }) {
   return (
-    <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+    >
       <div
         className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm shadow-[0_14px_28px_rgba(5,8,16,0.45)] ${
           message.role === "assistant"
@@ -203,7 +209,10 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
           <span>{message.role}</span>
           <span>{message.timestamp}</span>
         </div>
-        <ReactMarkdown className="text-sm leading-relaxed" components={markdownComponents}>
+        <ReactMarkdown
+          className="text-sm leading-relaxed"
+          components={markdownComponents}
+        >
           {message.content || " "}
         </ReactMarkdown>
         {message.role === "assistant" ? (
@@ -240,7 +249,8 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
                     {isExpanded ? (
                       <div className="mt-2 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(11,15,25,0.6)] p-3 text-xs text-[rgb(var(--text-primary))]">
                         <p className="leading-relaxed">
-                          {renderSnippet(source) ?? "Transcript snippet unavailable."}
+                          {renderSnippet(source) ??
+                            "Transcript snippet unavailable."}
                         </p>
                       </div>
                     ) : null}
@@ -317,17 +327,25 @@ export default function Dashboard() {
   const [youtubeDraft, setYoutubeDraft] = useState("");
   const [instagramDraft, setInstagramDraft] = useState("");
   const [chatDraft, setChatDraft] = useState(input);
-  const [expandedCitations, setExpandedCitations] = useState<Record<string, boolean>>({});
-  const [analysisInlineError, setAnalysisInlineError] = useState<string | null>(null);
+  const [expandedCitations, setExpandedCitations] = useState<
+    Record<string, boolean>
+  >({});
+  const [analysisInlineError, setAnalysisInlineError] = useState<string | null>(
+    null,
+  );
   const [chatInlineError, setChatInlineError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("videos");
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
-  const lastAnalyzeRequestRef = useRef<{ youtubeUrl: string; instagramUrl: string } | null>(null);
+  const lastAnalyzeRequestRef = useRef<{
+    youtubeUrl: string;
+    instagramUrl: string;
+  } | null>(null);
   const lastChatPromptRef = useRef<string>("");
   const chatTimeoutRef = useRef<number | null>(null);
   const analyzeTimeoutRef = useRef<number | null>(null);
@@ -335,7 +353,10 @@ export default function Dashboard() {
   const tokenTargetRef = useRef<string | null>(null);
   const tokenFlushFrameRef = useRef<number | null>(null);
   const toastTimersRef = useRef<Record<string, number>>({});
-  const retryContextRef = useRef<{ assistantId?: string; prompt?: string } | null>(null);
+  const retryContextRef = useRef<{
+    assistantId?: string;
+    prompt?: string;
+  } | null>(null);
 
   const progressFromStep =
     analysisStep >= 0
@@ -367,11 +388,14 @@ export default function Dashboard() {
     return () => {
       eventSourceRef.current?.close();
       if (chatTimeoutRef.current) window.clearTimeout(chatTimeoutRef.current);
-      if (analyzeTimeoutRef.current) window.clearTimeout(analyzeTimeoutRef.current);
+      if (analyzeTimeoutRef.current)
+        window.clearTimeout(analyzeTimeoutRef.current);
       if (tokenFlushFrameRef.current !== null) {
         window.cancelAnimationFrame(tokenFlushFrameRef.current);
       }
-      Object.values(toastTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      Object.values(toastTimersRef.current).forEach((timerId) =>
+        window.clearTimeout(timerId),
+      );
     };
   }, []);
 
@@ -444,16 +468,21 @@ export default function Dashboard() {
       setAnalysisProgress(clamped);
     }
 
-    const candidate = payload.step ?? payload.stage ?? payload.status ?? payload.message;
+    const candidate =
+      payload.step ?? payload.stage ?? payload.status ?? payload.message;
     if (typeof candidate === "string") {
       const normalized = candidate.trim().toLowerCase();
       const stepIndex = analysisSteps.findIndex(
-        (step) => step.key === normalized || step.label.toLowerCase().includes(normalized),
+        (step) =>
+          step.key === normalized ||
+          step.label.toLowerCase().includes(normalized),
       );
 
       if (stepIndex >= 0) {
         setAnalysisStep(stepIndex);
-        const derivedProgress = Math.round(((stepIndex + 1) / analysisSteps.length) * 100);
+        const derivedProgress = Math.round(
+          ((stepIndex + 1) / analysisSteps.length) * 100,
+        );
         if (derivedProgress > analysisProgress) {
           setAnalysisProgress(derivedProgress);
         }
@@ -480,7 +509,8 @@ export default function Dashboard() {
   };
 
   const finalizeAnalysisFailure = (error: unknown) => {
-    const message = error instanceof Error ? error.message : "Analysis failed. Try again.";
+    const message =
+      error instanceof Error ? error.message : "Analysis failed. Try again.";
     const normalized = normalizeServerError(message);
     setAnalysisStep(analysisSteps.length - 1);
     setAnalysisProgress(100);
@@ -511,7 +541,9 @@ export default function Dashboard() {
     appendToMessage(
       assistantId,
       `\n\n${normalizeServerError(message)}${
-        message.toLowerCase().includes("retry") ? "" : "\nRetry the prompt to continue."
+        message.toLowerCase().includes("retry")
+          ? ""
+          : "\nRetry the prompt to continue."
       }`,
     );
     clearChatTimeout();
@@ -564,7 +596,9 @@ export default function Dashboard() {
         } catch {
           details = "";
         }
-        throw new Error(details || `Analyze request failed (${response.status})`);
+        throw new Error(
+          details || `Analyze request failed (${response.status})`,
+        );
       }
 
       if (!response.body) {
@@ -586,7 +620,9 @@ export default function Dashboard() {
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
-            const payloadText = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
+            const payloadText = trimmed.startsWith("data:")
+              ? trimmed.slice(5).trim()
+              : trimmed;
 
             try {
               const payload = JSON.parse(payloadText) as {
@@ -601,13 +637,19 @@ export default function Dashboard() {
 
               if (payload.error) throw new Error(payload.error);
               if (payload.code === "missing_transcript") {
-                throw new Error("Transcript unavailable for one of the videos.");
+                throw new Error(
+                  "Transcript unavailable for one of the videos.",
+                );
               }
               if (payload.code === "instagram_scrape_failed") {
-                throw new Error("Instagram scraping failed. Check the Reel URL and try again.");
+                throw new Error(
+                  "Instagram scraping failed. Check the Reel URL and try again.",
+                );
               }
               if (payload.code === "empty_embeddings") {
-                throw new Error("No embeddings were returned. Retry analysis after the source is processed.");
+                throw new Error(
+                  "No embeddings were returned. Retry analysis after the source is processed.",
+                );
               }
 
               applyProgressUpdate(payload);
@@ -639,7 +681,10 @@ export default function Dashboard() {
     const nextYoutube = youtubeDraft.trim();
     const nextInstagram = instagramDraft.trim();
 
-    if (!isLikelyYouTubeUrl(nextYoutube) || !isLikelyInstagramUrl(nextInstagram)) {
+    if (
+      !isLikelyYouTubeUrl(nextYoutube) ||
+      !isLikelyInstagramUrl(nextInstagram)
+    ) {
       const invalidMessage =
         !isLikelyYouTubeUrl(nextYoutube) && !isLikelyInstagramUrl(nextInstagram)
           ? "Please enter a valid YouTube URL and Instagram Reel URL."
@@ -648,7 +693,11 @@ export default function Dashboard() {
             : "Please enter a valid Instagram Reel URL.";
       setAnalysisInlineError(invalidMessage);
       setAnalysisStatus("Fix the video URLs and try again.");
-      pushToast({ tone: "warning", title: "Invalid video URL", message: invalidMessage });
+      pushToast({
+        tone: "warning",
+        title: "Invalid video URL",
+        message: invalidMessage,
+      });
       return;
     }
 
@@ -674,7 +723,8 @@ export default function Dashboard() {
 
     const streamId = activeStreamIdRef.current;
     if (streamId) {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
       await fetch(`${apiBase}/chat/abort/${streamId}`, {
         method: "POST",
       }).catch(() => {
@@ -737,13 +787,14 @@ export default function Dashboard() {
     eventSourceRef.current?.close();
     clearChatTimeout();
 
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
     const streamId = `stream-${Date.now()}`;
     activeStreamIdRef.current = streamId;
 
-    const conversationMessages = (addUserMessage ? [...messages, userMessage] : messages).filter(
-      (message) => message.id !== previousAssistantId,
-    );
+    const conversationMessages = (
+      addUserMessage ? [...messages, userMessage] : messages
+    ).filter((message) => message.id !== previousAssistantId);
 
     const params = new URLSearchParams({
       prompt: trimmed,
@@ -763,7 +814,10 @@ export default function Dashboard() {
     const armChatTimeout = () => {
       clearChatTimeout();
       chatTimeoutRef.current = makeRequestTimeout(() => {
-        finalizeChatFailure(assistantId, "The model timed out before finishing the response.");
+        finalizeChatFailure(
+          assistantId,
+          "The model timed out before finishing the response.",
+        );
         es.close();
       }, 18000);
     };
@@ -786,7 +840,9 @@ export default function Dashboard() {
     };
 
     es.addEventListener("token", (event) => {
-      const payload = JSON.parse((event as MessageEvent<string>).data) as { token?: string };
+      const payload = JSON.parse((event as MessageEvent<string>).data) as {
+        token?: string;
+      };
       if (payload.token) {
         queueTokenDelta(assistantId, payload.token);
         armChatTimeout();
@@ -794,7 +850,9 @@ export default function Dashboard() {
     });
 
     es.addEventListener("sources", (event) => {
-      const payload = JSON.parse((event as MessageEvent<string>).data) as { sources?: ChatSource[] };
+      const payload = JSON.parse((event as MessageEvent<string>).data) as {
+        sources?: ChatSource[];
+      };
       if (payload.sources) {
         updateMessage(assistantId, { sources: payload.sources });
       }
@@ -825,7 +883,9 @@ export default function Dashboard() {
     });
 
     es.addEventListener("error", (event) => {
-      const payload = JSON.parse((event as MessageEvent<string>).data || "{}") as {
+      const payload = JSON.parse(
+        (event as MessageEvent<string>).data || "{}",
+      ) as {
         message?: string;
         error?: string;
         code?: string;
@@ -840,7 +900,9 @@ export default function Dashboard() {
                 ? "No embeddings were returned. Retry analysis after the source is processed."
                 : payload.code === "instagram_scrape_failed"
                   ? "Instagram scraping failed. Check the Reel URL and try again."
-                  : payload.error || payload.message || "The chat stream failed.";
+                  : payload.error ||
+                    payload.message ||
+                    "The chat stream failed.";
         finalizeChatFailure(assistantId, codeMessage);
         es.close();
         return;
@@ -858,7 +920,10 @@ export default function Dashboard() {
       }
 
       if (es.readyState === EventSource.CLOSED) {
-        finalizeChatFailure(assistantId, "Unable to continue stream. Please retry your prompt.");
+        finalizeChatFailure(
+          assistantId,
+          "Unable to continue stream. Please retry your prompt.",
+        );
         es.close();
       }
     });
@@ -873,6 +938,7 @@ export default function Dashboard() {
   };
 
   const handleSuggestionClick = (prompt: string) => {
+    setMobileTab("chat");
     setChatDraft(prompt);
     setChatInlineError(null);
     chatInputRef.current?.focus();
@@ -890,36 +956,36 @@ export default function Dashboard() {
     <div className="min-h-screen">
       <div className="min-h-screen flex flex-col">
         <header className="border-b border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.6)] backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
             <div className="flex items-center gap-4">
-              <div className="relative h-12 w-12 rounded-2xl bg-[rgb(var(--panel-elevated)/0.9)] shadow-[0_18px_40px_rgba(6,10,20,0.55)]">
+              <div className="relative h-10 w-10 rounded-2xl bg-[rgb(var(--panel-elevated)/0.9)] shadow-[0_18px_40px_rgba(6,10,20,0.55)] sm:h-12 sm:w-12">
                 <div className="absolute inset-1 rounded-2xl bg-[radial-gradient(circle_at_top,#22D3EE_0%,#0B0F19_70%)] opacity-80" />
               </div>
               <div>
                 <p className="text-xs font-medium text-[rgb(var(--text-secondary))]">
                   Creator Analytics
                 </p>
-                <h1 className="text-3xl font-bold tracking-tight text-[rgb(var(--text-primary))]">
+                <h1 className="text-2xl font-bold tracking-tight text-[rgb(var(--text-primary))] sm:text-3xl">
                   Video Comparison Dashboard
                 </h1>
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs text-[rgb(var(--text-secondary))]">
               <span className="flex h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] shadow-[0_0_0_6px_rgba(34,211,238,0.18)]" />
-              <span>{statusLabels[status]}</span>
+              <span className="hidden sm:inline">{statusLabels[status]}</span>
             </div>
           </div>
         </header>
 
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-6 lg:grid lg:grid-cols-[1.15fr_0.85fr]">
+        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:grid lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
           <section className="lg:col-span-2">
             <form
               onSubmit={handleAnalyze}
-              className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.7)] p-6 shadow-[0_20px_46px_rgba(5,8,16,0.55)] backdrop-blur-md"
+              className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.7)] p-4 shadow-[0_20px_46px_rgba(5,8,16,0.55)] backdrop-blur-md sm:p-6"
             >
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-semibold tracking-tight text-[rgb(var(--text-primary))]">
+                  <h2 className="text-xl font-semibold tracking-tight text-[rgb(var(--text-primary))] sm:text-2xl">
                     Analyze Videos
                   </h2>
                   <p className="text-sm text-[rgb(var(--text-secondary))]">
@@ -929,7 +995,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={isAnalyzeDisabled}
-                  className="group relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.9)] px-5 py-2 text-xs font-semibold text-[rgb(var(--text-primary))] shadow-[0_16px_32px_rgba(5,8,16,0.55)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                  className="group relative min-h-[44px] overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.9)] px-5 py-2 text-sm font-semibold text-[rgb(var(--text-primary))] shadow-[0_16px_32px_rgba(5,8,16,0.55)] transition disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="relative z-10">
                     {isAnalyzing ? "Analyzing..." : "Analyze Videos"}
@@ -946,7 +1012,10 @@ export default function Dashboard() {
 
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div>
-                  <label htmlFor="youtube-url" className="text-xs font-medium text-[rgb(var(--text-secondary))]">
+                  <label
+                    htmlFor="youtube-url"
+                    className="text-xs font-medium text-[rgb(var(--text-secondary))]"
+                  >
                     YouTube URL
                   </label>
                   <input
@@ -959,11 +1028,14 @@ export default function Dashboard() {
                     placeholder="https://youtube.com/watch?v=..."
                     disabled={isAnalyzing}
                     aria-invalid={Boolean(analysisInlineError)}
-                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60 aria-[invalid=true]:border-rose-400/60"
+                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-3 text-base text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60 aria-[invalid=true]:border-rose-400/60 md:text-sm"
                   />
                 </div>
                 <div>
-                  <label htmlFor="instagram-url" className="text-xs font-medium text-[rgb(var(--text-secondary))]">
+                  <label
+                    htmlFor="instagram-url"
+                    className="text-xs font-medium text-[rgb(var(--text-secondary))]"
+                  >
                     Instagram Reel URL
                   </label>
                   <input
@@ -976,7 +1048,7 @@ export default function Dashboard() {
                     placeholder="https://instagram.com/reel/..."
                     disabled={isAnalyzing}
                     aria-invalid={Boolean(analysisInlineError)}
-                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60 aria-[invalid=true]:border-rose-400/60"
+                    className="mt-2 w-full rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-3 text-base text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] disabled:opacity-60 aria-[invalid=true]:border-rose-400/60 md:text-sm"
                   />
                 </div>
               </div>
@@ -1017,31 +1089,66 @@ export default function Dashboard() {
             </form>
           </section>
 
-          <section className="space-y-6">
+          <div className="sticky top-[72px] z-20 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.85)] p-1 backdrop-blur-md md:hidden">
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                onClick={() => setMobileTab("videos")}
+                aria-pressed={mobileTab === "videos"}
+                className={`min-h-[44px] rounded-xl text-sm font-semibold transition ${
+                  mobileTab === "videos"
+                    ? "bg-[rgba(34,211,238,0.16)] text-[rgb(var(--text-primary))]"
+                    : "text-[rgb(var(--text-secondary))]"
+                }`}
+              >
+                Videos
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileTab("chat")}
+                aria-pressed={mobileTab === "chat"}
+                className={`min-h-[44px] rounded-xl text-sm font-semibold transition ${
+                  mobileTab === "chat"
+                    ? "bg-[rgba(34,211,238,0.16)] text-[rgb(var(--text-primary))]"
+                    : "text-[rgb(var(--text-secondary))]"
+                }`}
+              >
+                Chat
+              </button>
+            </div>
+          </div>
+
+          <section
+            className={`space-y-6 ${mobileTab === "chat" ? "hidden md:block" : "block"}`}
+          >
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold tracking-tight text-[rgb(var(--text-primary))]">
+                <h2 className="text-xl font-semibold tracking-tight text-[rgb(var(--text-primary))] sm:text-2xl">
                   Video Comparison Panel
                 </h2>
                 <p className="text-sm text-[rgb(var(--text-secondary))]">
                   Align inputs for the model before streaming insights.
                 </p>
               </div>
-              <div className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.6)] px-4 py-2 text-xs text-[rgb(var(--text-secondary))]">
+              <div className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.6)] px-3 py-2 text-[11px] text-[rgb(var(--text-secondary))] sm:px-4 sm:text-xs">
                 {videos.length} inputs
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               {videos.map((video, index) => (
                 <VideoCard key={video.id} video={video} index={index} />
               ))}
             </div>
           </section>
 
-          <aside className="self-start lg:sticky lg:top-24 lg:h-[calc(100vh-10rem)]">
-            <div className="flex h-full flex-col rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.7)] shadow-[0_22px_48px_rgba(5,8,16,0.55)] backdrop-blur-md">
-              <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] px-6 py-4">
+          <aside
+            className={`self-start md:sticky md:top-16 md:h-[calc(100dvh-6.5rem)] lg:top-24 lg:h-[calc(100dvh-10rem)] ${
+              mobileTab === "videos" ? "hidden md:block" : "block"
+            }`}
+          >
+            <div className="flex min-h-[58vh] h-full flex-col rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.7)] shadow-[0_22px_48px_rgba(5,8,16,0.55)] backdrop-blur-md md:min-h-0">
+              <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.06)] px-4 py-3 sm:px-6 sm:py-4">
                 <div>
                   <p className="text-xs font-medium text-[rgb(var(--text-secondary))]">
                     AI Chat
@@ -1055,14 +1162,16 @@ export default function Dashboard() {
                     type="button"
                     onClick={handleNewChat}
                     disabled={isStreaming || messages.length === 0}
-                    className="rounded-2xl border border-[rgba(255,255,255,0.08)] px-3 py-1 text-[11px] text-[rgb(var(--text-primary))] transition hover:border-[rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-[36px] rounded-2xl border border-[rgba(255,255,255,0.08)] px-3 py-1 text-[11px] text-[rgb(var(--text-primary))] transition hover:border-[rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     New Chat
                   </button>
                   <div className="flex items-center gap-2">
                     <span
                       className={`h-2 w-2 rounded-2xl ${
-                        isStreaming ? "bg-[rgb(var(--accent-cyan))]" : "bg-[rgba(248,250,252,0.2)]"
+                        isStreaming
+                          ? "bg-[rgb(var(--accent-cyan))]"
+                          : "bg-[rgba(248,250,252,0.2)]"
                       }`}
                     />
                     <span>{isStreaming ? "Streaming" : "Idle"}</span>
@@ -1070,14 +1179,14 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="flex-1 space-y-4 overflow-auto px-6 py-4">
+              <div className="flex-1 space-y-4 overflow-auto px-4 py-3 sm:px-6 sm:py-4">
                 <div className="flex flex-wrap gap-2">
                   {promptSuggestions.map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
                       onClick={() => handleSuggestionClick(prompt)}
-                      className="rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 py-1 text-xs text-[rgb(var(--text-secondary))] transition hover:border-[rgba(34,211,238,0.4)] hover:text-[rgb(var(--text-primary))]"
+                      className="min-h-[36px] rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1 text-[11px] text-[rgb(var(--text-secondary))] transition hover:border-[rgba(34,211,238,0.4)] hover:text-[rgb(var(--text-primary))] sm:px-3 sm:text-xs"
                     >
                       {prompt}
                     </button>
@@ -1103,8 +1212,14 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 text-xs text-[rgb(var(--text-secondary))]">
                     <div className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" />
-                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" style={{ animationDelay: "0.1s" }} />
-                      <span className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce" style={{ animationDelay: "0.2s" }} />
+                      <span
+                        className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce"
+                        style={{ animationDelay: "0.1s" }}
+                      />
+                      <span
+                        className="h-2 w-2 rounded-2xl bg-[rgb(var(--accent-cyan))] animate-bounce"
+                        style={{ animationDelay: "0.2s" }}
+                      />
                     </div>
                     <span>Assistant is typing...</span>
                   </div>
@@ -1112,13 +1227,19 @@ export default function Dashboard() {
                 <div ref={chatEndRef} />
               </div>
 
-              <form onSubmit={handleChatSubmit} className="border-t border-[rgba(255,255,255,0.06)] px-6 py-4">
+              <form
+                onSubmit={handleChatSubmit}
+                className="border-t border-[rgba(255,255,255,0.06)] px-4 py-3 sm:px-6 sm:py-4"
+              >
                 {chatInlineError ? (
                   <div className="mb-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-xs text-rose-200">
                     {chatInlineError}
                   </div>
                 ) : null}
-                <label htmlFor="chat-input" className="text-xs font-medium text-[rgb(var(--text-secondary))]">
+                <label
+                  htmlFor="chat-input"
+                  className="text-xs font-medium text-[rgb(var(--text-secondary))]"
+                >
                   Prompt
                 </label>
                 <textarea
@@ -1132,7 +1253,7 @@ export default function Dashboard() {
                   placeholder="Ask for a hook-by-hook comparison..."
                   ref={chatInputRef}
                   aria-invalid={Boolean(chatInlineError)}
-                  className="mt-2 w-full resize-none rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-2 text-sm text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] aria-[invalid=true]:border-rose-400/60"
+                  className="mt-2 w-full resize-none rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel)/0.65)] px-4 py-3 text-base text-[rgb(var(--text-primary))] shadow-[0_12px_30px_rgba(5,8,16,0.45)] focus:border-[rgba(34,211,238,0.4)] focus:outline-none focus:ring-2 focus:ring-[rgba(34,211,238,0.2)] aria-[invalid=true]:border-rose-400/60 md:text-sm"
                 />
                 <div className="mt-4 flex items-center justify-between text-xs text-[rgb(var(--text-secondary))]">
                   <span>Shift + Enter for a new line</span>
@@ -1141,7 +1262,7 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={handleAbortGeneration}
-                        className="rounded-2xl border border-rose-400/60 bg-rose-400/10 px-4 py-2 text-xs font-semibold text-rose-300"
+                        className="min-h-[40px] rounded-2xl border border-rose-400/60 bg-rose-400/10 px-4 py-2 text-xs font-semibold text-rose-300"
                       >
                         Abort
                       </button>
@@ -1149,7 +1270,7 @@ export default function Dashboard() {
                     <button
                       type="submit"
                       disabled={isStreaming}
-                      className="group relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.9)] px-4 py-2 text-xs font-semibold text-[rgb(var(--text-primary))] shadow-[0_14px_28px_rgba(5,8,16,0.5)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                      className="group relative min-h-[40px] overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[rgb(var(--panel-elevated)/0.9)] px-4 py-2 text-xs font-semibold text-[rgb(var(--text-primary))] shadow-[0_14px_28px_rgba(5,8,16,0.5)] transition disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <span className="relative z-10">Send</span>
                       <span className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-[linear-gradient(120deg,rgba(34,211,238,0.9),rgba(139,92,246,0.9))]" />
@@ -1162,14 +1283,14 @@ export default function Dashboard() {
         </main>
 
         <footer className="border-t border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.6)]">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4 text-xs text-[rgb(var(--text-secondary))]">
+          <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs text-[rgb(var(--text-secondary))] sm:px-6 sm:py-4">
             <span>Transport ready for SSE or WebSocket streams.</span>
             <span>Status: {statusLabels[status]}</span>
           </div>
         </footer>
       </div>
 
-      <div className="pointer-events-none fixed right-4 top-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3">
+      <div className="pointer-events-none fixed inset-x-2 top-3 z-50 flex w-auto flex-col gap-3 sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[min(24rem,calc(100vw-2rem))]">
         {toasts.map((toast) => {
           const toneStyles =
             toast.tone === "success"
