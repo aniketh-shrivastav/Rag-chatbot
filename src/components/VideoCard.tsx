@@ -1,8 +1,10 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { VideoCard as VideoCardData } from "@/stores/dashboardStore";
+
+const TranscriptVirtualizer = lazy(() => import("./TranscriptVirtualizer"));
 
 const formatCount = (value: number) => {
   if (value >= 1000000) {
@@ -59,6 +61,8 @@ const SkeletonBlock = ({ className }: { className: string }) => (
 
 function VideoCard({ video, index = 0 }: VideoCardProps) {
   const [copied, setCopied] = useState(false);
+  const [isEmbedVisible, setIsEmbedVisible] = useState(false);
+  const embedRootRef = useRef<HTMLDivElement | null>(null);
   const metrics = useMemo(
     () => [
       { label: "Followers", value: formatCount(video.followerCount) },
@@ -91,6 +95,25 @@ function VideoCard({ video, index = 0 }: VideoCardProps) {
     }
   };
 
+  useEffect(() => {
+    const element = embedRootRef.current;
+    if (!element || isEmbedVisible) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsEmbedVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "180px" },
+    );
+
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [isEmbedVisible]);
+
   return (
     <motion.article
       initial={{ opacity: 0, y: 12 }}
@@ -121,20 +144,24 @@ function VideoCard({ video, index = 0 }: VideoCardProps) {
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.6)]">
+        <div
+          ref={embedRootRef}
+          className="relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[rgb(var(--panel)/0.6)]"
+        >
           {video.isLoading ? (
             <SkeletonBlock className="h-40 w-full" />
-          ) : video.embedUrl ? (
+          ) : video.embedUrl && isEmbedVisible ? (
             <iframe
               src={video.embedUrl}
               title={`${video.title} preview`}
               className="h-40 w-full"
+              loading="lazy"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
           ) : (
             <div className="flex h-40 items-center justify-center text-xs text-[rgb(var(--text-secondary))]">
-              Preview unavailable
+              {video.embedUrl ? "Preview loading..." : "Preview unavailable"}
             </div>
           )}
         </div>
@@ -213,9 +240,17 @@ function VideoCard({ video, index = 0 }: VideoCardProps) {
         ) : (
           <div className="mt-3 max-h-28 overflow-y-auto text-sm text-[rgb(var(--text-primary))]">
             {video.transcript ? (
-              <p className="whitespace-pre-line leading-relaxed">
-                {video.transcript}
-              </p>
+              <Suspense
+                fallback={
+                  <div className="space-y-2">
+                    <SkeletonBlock className="h-3 w-full" />
+                    <SkeletonBlock className="h-3 w-5/6" />
+                    <SkeletonBlock className="h-3 w-2/3" />
+                  </div>
+                }
+              >
+                <TranscriptVirtualizer transcript={video.transcript} />
+              </Suspense>
             ) : (
               <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
                 Transcript unavailable for this source. Retry analysis after the
